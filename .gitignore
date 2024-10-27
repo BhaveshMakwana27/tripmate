@@ -1,0 +1,7 @@
+tripEnv/
+__pycache__/
+.env
+apis_list.txt
+test_data.txt
+test_trip_data.txt
+test_vehicle_data.txt
