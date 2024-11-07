@@ -1,4 +1,5 @@
 from fastapi import APIRouter,Depends,UploadFile,File,Form
+from fastapi.responses import RedirectResponse
 from datetime import datetime
 from app import database,models,utils,oauth2,file_handle,constants,errors,enums
 from app.schemas import user_schema,token_schema
@@ -10,8 +11,8 @@ from typing import Optional
 
 route = APIRouter(prefix="/user")
 
-@route.post("/",response_model=user_schema.GetUser)
-def register( name: str = Form(...),
+@route.post("/",response_model=token_schema.Token)
+def register(name: str = Form(...),
                     email: str = Form(...),
                     contact_no: str = Form(...),
                     address_line:str = Form(...),
@@ -22,6 +23,7 @@ def register( name: str = Form(...),
                     gender:str = Form(...),
                     password: str = Form(...),
                     profile_photo: UploadFile|None = File(None),
+                    user_type:enums.UserType = Form(enums.UserType.PASSENGER),
                     db:Session = Depends(database.get_db)
                     ):
     
@@ -32,6 +34,10 @@ def register( name: str = Form(...),
         if user_check.first().contact_no==contact_no:
             raise errors.UserContactExistException
 
+
+    if user_type != enums.UserType.DRIVER and user_type != enums.UserType.PASSENGER:
+        raise errors.InvalidUserTypeException  
+      
 
     hashed_password = utils.hash_password(password) 
     user = user_schema.CreateUser(name=name,
@@ -45,25 +51,29 @@ def register( name: str = Form(...),
                              gender=gender.upper(),
                              password=hashed_password)
     
-
-    
     new_user = models.User(**dict(user))
     db.add(new_user)
     db.commit()
+    db.refresh(new_user)
     if profile_photo is not None:
-        user = db.query(models.User).filter(models.User.email==email)
-
-        new_user_dir_path=f'{settings.user_media_url}{user.first().user_id}/'
-        profile_photo.filename = f'{user.first().user_id}_profile.jpg'
+        new_user_dir_path=f'{settings.user_media_url}{new_user.user_id}/'
+        profile_photo.filename = f'{new_user.user_id}_profile.jpg'
         profile_file_path = f'{new_user_dir_path}{profile_photo.filename}'
 
         profile_file_path=file_handle.upload_file(file=profile_photo,filepath=f'{profile_file_path}')
 
-        user.first().profile_photo=profile_file_path
+        new_user.profile_photo=profile_file_path
         db.commit()
     db.refresh(new_user)
-    
-    return new_user
+
+
+    access_token = oauth2.create_token({'user_id':new_user.user_id,'user_type':user_type.value})
+    token = token_schema.Token(access_token=access_token,token_type='Bearar')
+
+    if user_type == enums.UserType.DRIVER:
+        token.need_docs = True
+
+    return token
 
 @route.get("/",response_model=user_schema.GetUserDetails)
 def get_profile_details(db:Session = Depends(database.get_db),current_user:models.User = Depends(oauth2.get_current_user)):
@@ -105,6 +115,8 @@ def edit_profile(name: str = Form(...),
     user.update(dict(edit_user))
     db.commit()
    
+    
+    
     return user.first()
 
 @route.put('/update_profile_photo')
@@ -177,6 +189,8 @@ def upload_user_docs(aadhar_number:str = Form(),
 
     db.add(new_docs)
     db.commit()
+
+    
 
     return True
 

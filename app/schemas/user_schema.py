@@ -1,6 +1,7 @@
 from pydantic import BaseModel,EmailStr
 from datetime import datetime
 from app.enums import Gender
+from .token_schema import Token
 
 class UserBase(BaseModel):
     name:str
@@ -13,15 +14,16 @@ class UserBase(BaseModel):
     pincode:int
     gender:Gender
 
-class CreateUser(UserBase):
-    password:str
-
 class GetUser(BaseModel):
     user_id:int
     name:str
     email:str
     contact_no:str
     profile_photo:str
+
+class CreateUser(UserBase):
+    password:str
+
 
 class DriverBase(BaseModel):
     user_id:int

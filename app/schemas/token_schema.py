@@ -10,3 +10,4 @@ class TokenData(BaseModel):
 class Token(BaseModel):
     access_token : str
     token_type : str
+    need_docs : bool = False
