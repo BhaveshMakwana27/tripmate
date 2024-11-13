@@ -39,10 +39,22 @@ def upload_files(files_paths:List[List[UploadFile|str]],client=client()):
     except:
         raise errors.FileUploadException
 
-
-def delete_file(filepath):
+def generate_presigned_url(files_paths:List[str],client=client(),expiration=3600):
     try:
-        shutil.rmtree(filepath)
+        file_urls = []
+        for file in files_paths:
+            url = client.generate_presigned_url('get_object',
+                                        Params={
+                                                'Bucket': settings.aws_s3_bucket,
+                                                'Key': file
+                                                },
+                                        ExpiresIn=expiration)
+        
+            file_urls.append(url)
+        return file_urls
     except:
-        raise errors.FileUploadException
+        raise errors.DocumentNotUploadedException
+
+
+
 

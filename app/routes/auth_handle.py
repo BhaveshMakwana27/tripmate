@@ -33,18 +33,20 @@ def login(contact_no: str = Form(...),
 def switch_user_type(current_user:models.User = Depends(oauth2.get_current_user),
                     current_user_type:enums.UserType = Depends(oauth2.get_current_user_type),db:Session=Depends(database.get_db)):
     id = current_user.user_id
-    response = token_schema.Token(token_type='Bearer')
-    
+    response = token_schema.Token
+    response.token_type='Bearer'
     if current_user_type == enums.UserType.DRIVER:
         new_access_token = oauth2.create_token({'user_id':id,"user_type":enums.UserType.PASSENGER.value})
         response.access_token = new_access_token
+        response.need_docs = False
 
-    else :
+    elif current_user_type == enums.UserType.PASSENGER :
         new_access_token = oauth2.create_token({'user_id':id,"user_type":enums.UserType.DRIVER.value})
         response.access_token = new_access_token
         check_docs = db.query(models.UserIdProof).filter(models.UserIdProof.user_id == id)
         if check_docs.first() is None:
             response.need_docs = True
+
 
     return response
 

@@ -7,7 +7,7 @@ from app.config import settings
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 import shutil
-from typing import Optional
+from typing import Union
 
 route = APIRouter(prefix="/user")
 
@@ -75,21 +75,25 @@ def register(name: str = Form(...),
 
     return token
 
-@route.get("/",response_model=user_schema.GetUserDetails)
-def get_profile_details(db:Session = Depends(database.get_db),current_user:models.User = Depends(oauth2.get_current_user)):
+@route.get("/",response_model=Union[user_schema.GetUserDetails,user_schema.GetDriverUserDetails])
+def get_profile_details(db:Session = Depends(database.get_db),
+                        current_user:models.User = Depends(oauth2.get_current_user),
+                        current_user_type:enums.UserType=Depends(oauth2.get_current_user_type)):
+
+
+    if current_user_type == enums.UserType.DRIVER:
+        get_docs = db.query(models.UserIdProof).filter(models.UserIdProof.user_id==current_user.user_id).first()
+        if get_docs is None:
+            raise errors.DocumentNotUploadedException
+        doc_path = [get_docs.aadhar_card_front,get_docs.aadhar_card_back,get_docs.license_front,get_docs.license_back]
+        doc_urls = file_handle.generate_presigned_url(doc_path)
+        
+        return current_user,{'documents':doc_urls}
     return current_user
 
-@route.get('/{user_id}',response_model=user_schema.GetUser)
-def get_user_details(user_id:int,
-                     db:Session = Depends(database.get_db),
-                     current_user:models.User = Depends(oauth2.get_current_user)):
-    user = db.query(models.User).filter(models.User.user_id==user_id).first()
-    return user
-
 @route.put("/",response_model=user_schema.GetUserDetails)
-def edit_profile(name: str = Form(...),
-                            email: str = Form(...),
-                            contact_no: str = Form(...),
+def edit_profile(profile_photo:UploadFile=File(None),
+                            name: str = Form(...),
                             address_line:str = Form(...),
                             city:str = Form(...),
                             state:str = Form(...),
@@ -101,9 +105,7 @@ def edit_profile(name: str = Form(...),
                         ):
 
     user = db.query(models.User).filter(models.User.user_id==current_user.user_id)
-    edit_user = user_schema.UserBase(name=name,
-                                        email=email,
-                                        contact_no=contact_no,
+    edit_user = user_schema.EditProfile(name=name,
                                         address_line=address_line,
                                         city=city,
                                         state=state,
@@ -111,33 +113,65 @@ def edit_profile(name: str = Form(...),
                                         pincode=pincode,
                                         gender=gender)
     
+
+    if profile_photo is not None:
+        new_user_dir_path=f'{settings.user_media_url}{user.first().user_id}/'
+        profile_photo.filename = f'{user.first().user_id}_profile.jpg'
+        profile_file_path = f'{new_user_dir_path}{profile_photo.filename}'
+
+        profile_file_path=file_handle.upload_file(file=profile_photo,filepath=f'{profile_file_path}')
+
+        user.first().profile_photo=profile_file_path
+
     user.first().updated_at = datetime.now()
     user.update(dict(edit_user))
     db.commit()
    
-    
-    
     return user.first()
 
 @route.put('/update_profile_photo')
-def edit_profile_photo( profile_photo:UploadFile=File(...),
+def edit_profile_photo( profile_photo:UploadFile=File(None),
                         db:Session=Depends(database.get_db),
                         current_user:models.User=Depends(oauth2.get_current_user)):
     
+    if not profile_photo:
+        raise errors.FileSelectException
+    new_user_dir_path=f'{settings.user_media_url}{current_user.user_id}/'
+    profile_photo.filename = f'{current_user.user_id}_profile.jpg'
+    profile_file_path = f'{new_user_dir_path}{profile_photo.filename}'
+
     profile_photo.filename = f'{current_user.user_id}_profile.jpg'
     new_url=file_handle.upload_file(file=profile_photo,
-                            filepath=current_user.profile_photo[40:])
+                            filepath=profile_file_path)
     current_user.profile_photo=new_url
     current_user.updated_at = datetime.now()
     db.commit()
-    return {'url':new_url}
+    return True
 
-@route.delete("")
-def delete_profile(db:Session = Depends(database.get_db),current_user:models.User = Depends(oauth2.get_current_user)):
-    user = db.query(models.User).filter(models.User.user_id==current_user.user_id)
-    shutil.rmtree(f'{settings.user_media_url}{user.first().user_id}')
-    user.delete()
+@route.post('/rating')
+def give_rating(trip_id:int,current_user:models.User=Depends(oauth2.get_current_user),
+                rating:int = Form(0),
+                current_user_type:enums.UserType=Depends(oauth2.get_current_user_type),
+                db:Session=Depends(database.get_db)):
+    
+    
+    if current_user_type!=enums.UserType.PASSENGER:
+        raise errors.NotAuthorizedException
+    
+    trip = db.query(models.Trip).filter(models.Trip.trip_id==trip_id,
+                                        models.Trip.status==enums.TripStatus.COMPLETED).first()
+
+    if trip is None:
+        raise errors.NoTripException
+
+    driver = db.query(models.User).filter(models.User.user_id==trip.user_id).first()
+
+    driver.rating_count += 1
+    driver.ratings = (driver.ratings+rating)/driver.rating_count
+
     db.commit()
+    db.refresh(driver)
+
     return True
 
 @route.post("/upload_docs")
@@ -150,7 +184,7 @@ def upload_user_docs(aadhar_number:str = Form(),
                         current_user:models.User = Depends(oauth2.get_current_user),
                         current_user_type:models.User = Depends(oauth2.get_current_user_type)
                     ):
-    
+
     if current_user_type != enums.UserType.DRIVER:
         raise errors.NotAuthorizedException
     
@@ -177,12 +211,15 @@ def upload_user_docs(aadhar_number:str = Form(),
                  
     file_urls = file_handle.upload_files(files_paths)
     
+    if len(file_urls) < 1:
+        raise errors.FileUploadException
+
     new_docs = user_schema.UploadUserDocs(user_id=current_user.user_id,
                                     aadhar_number=aadhar_number,
-                                    aadhar_card_front=file_urls[0],
-                                    aadhar_card_back=file_urls[1],
-                                    license_front=file_urls[2],
-                                    license_back=file_urls[3]
+                                    aadhar_card_front=files_paths[0][1],
+                                    aadhar_card_back=files_paths[1][1],
+                                    license_front=files_paths[2][1],
+                                    license_back=files_paths[3][1]
                                     )
     
     new_docs = models.UserIdProof(**dict(new_docs))
@@ -190,7 +227,4 @@ def upload_user_docs(aadhar_number:str = Form(),
     db.add(new_docs)
     db.commit()
 
-    
-
     return True
-

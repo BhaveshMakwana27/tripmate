@@ -1,6 +1,7 @@
 tripEnv/
 __pycache__/
 .env
+.env copy
 apis_list.txt
 test_data.txt
 test_trip_data.txt

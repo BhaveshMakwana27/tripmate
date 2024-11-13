@@ -1,6 +1,5 @@
 from fastapi import HTTPException,status
 
-
 ''' User data Exceptions '''
 InvalidUserTypeException = HTTPException(status_code=status.HTTP_406_NOT_ACCEPTABLE,detail="invalid user type")
 UserEmailExistException = HTTPException(status_code=status.HTTP_406_NOT_ACCEPTABLE,detail="email address already used")
@@ -15,7 +14,9 @@ NotAuthorizedException = HTTPException(status_code=status.HTTP_403_FORBIDDEN,det
 InvalidAadharNumberException = HTTPException(status_code=status.HTTP_406_NOT_ACCEPTABLE,detail='invalid aadhar number')
 
 ''' File handling related Exception'''
+FileSelectException = HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED,detail='File Not Selected')
 FileUploadException = HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED,detail='File Not Uploaded')
+FileDeleteException = HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED,detail='File Not Deleted')
 
 ''' Vehicle data Related Exceptions '''
 NoVehicleException = HTTPException(status_code=status.HTTP_404_NOT_FOUND,detail='No Vehicle Available')
@@ -34,5 +35,11 @@ InvalidDateTimeException = HTTPException(status_code=status.HTTP_406_NOT_ACCEPTA
 
 InvalidBookingException = HTTPException(status_code=status.HTTP_406_NOT_ACCEPTABLE,detail='Invalid Booking')
 BookingFailedException = HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED,detail='Booking Failed')
-NoCurrentBookings = HTTPException(status_code=status.HTTP_204_NO_CONTENT)
+NoCurrentBookings = HTTPException(status_code=status.HTTP_404_NOT_FOUND,detail='No Bookings')
 AlreadyBookedException = HTTPException(status_code=status.HTTP_406_NOT_ACCEPTABLE,detail='You have already booked this trip')
+BookingAlreadyCancelledException = HTTPException(status_code=status.HTTP_406_NOT_ACCEPTABLE,detail='You have already cancelled booking for this trip')
+InvalidCancellationException = HTTPException(status_code=status.HTTP_406_NOT_ACCEPTABLE,detail="Cancellation can't be done.")
+
+''' Payment related Exceptions '''
+
+InvalidPaymentMethod = HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Invalid Payment Method.')

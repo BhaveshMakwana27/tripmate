@@ -20,6 +20,7 @@ class User(Base):
     password = Column(String,nullable=False)
     profile_photo = Column(String,nullable=False,server_default=settings.default_profile_photo_path)
     ratings = Column(Double,nullable=False,server_default='0.0')
+    rating_count = Column(Integer,nullable=False,server_default='0')
     created_at = Column(TIMESTAMP(timezone=True),server_default=text('now()'),nullable=False)
     updated_at = Column(TIMESTAMP(timezone=True),server_default=text('now()'),nullable=False)
 
@@ -93,13 +94,15 @@ class TripBook(Base):
     booking_id = Column(Integer,primary_key=True)
     trip_id = Column(Integer,ForeignKey("trip.trip_id"),nullable=False)
     driver_id = Column(Integer,ForeignKey("user.user_id"),nullable=False)
-    passenger_id = Column(Integer,ForeignKey("user.user_id"),nullable=False,unique=True)
-    booking_status = Column(Enum(enums.BookingStatus),nullable=False,server_default=enums.BookingStatus.PENDING.value)
+    passenger_id = Column(Integer,ForeignKey("user.user_id"),nullable=False)
+    booking_status = Column(Enum(enums.BookingStatus),nullable=False,server_default=enums.BookingStatus.CONFIRMED.value)
     payable_amount = Column(Integer,nullable=False)
     seat_count = Column(Integer,nullable=False)
     booking_time = Column(TIMESTAMP(timezone=True),nullable=False,server_default=text('now()'))
 
     trip = relationship('Trip')
+    passenger = relationship('User',foreign_keys=[passenger_id])
+    driver = relationship('User',foreign_keys=[driver_id])
 
 class Payment(Base):
     __tablename__ = 'payment'
@@ -107,10 +110,9 @@ class Payment(Base):
     payment_id = Column(Integer, primary_key=True)
     booking_id = Column(Integer, ForeignKey("trip_book.booking_id"), nullable=False)
     amount = Column(Integer, nullable=False)
-    payment_method = Column(String, nullable=False)
+    payment_method = Column(Enum(enums.PaymentMethod), nullable=False,server_default=enums.PaymentMethod.CASH.value)
     payment_time = Column(TIMESTAMP(timezone=True), nullable=False, server_default=text('now()'))
-    payment_status = Column(Enum(enums.PaymentStatus), nullable=False, server_default='pending')
-
+    payment_status = Column(Enum(enums.PaymentStatus), nullable=False, server_default=enums.PaymentStatus.PENDING.value)
     booking = relationship('TripBook')
 
 # class TripCompletionCheck(Base):

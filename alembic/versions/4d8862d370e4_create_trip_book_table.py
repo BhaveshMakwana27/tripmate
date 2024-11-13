@@ -22,8 +22,8 @@ def upgrade() -> None:
     op.create_table("trip_book",sa.Column("booking_id",sa.Integer,primary_key=True),
                                 sa.Column("trip_id",sa.Integer,sa.ForeignKey("trip.trip_id"),nullable=False),
                                 sa.Column("driver_id",sa.Integer,sa.ForeignKey("user.user_id"),nullable=False),
-                                sa.Column("passenger_id",sa.Integer,sa.ForeignKey("user.user_id"),nullable=False,unique=True),
-                                sa.Column("booking_status",sa.Enum(enums.BookingStatus),nullable=False,server_default=enums.BookingStatus.PENDING.value),
+                                sa.Column("passenger_id",sa.Integer,sa.ForeignKey("user.user_id"),nullable=False),
+                                sa.Column("booking_status",sa.Enum(enums.BookingStatus),nullable=False,server_default=enums.BookingStatus.CONFIRMED.value),
                                 sa.Column("payable_amount",sa.Integer,nullable=False),
                                 sa.Column("seat_count",sa.Integer,nullable=False),
                                 sa.Column("booking_time",sa.TIMESTAMP(timezone=True),nullable=False,server_default=sa.text("now()"))
@@ -33,4 +33,5 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_table("trip_book")
+    
     pass

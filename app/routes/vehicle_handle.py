@@ -80,7 +80,7 @@ def get_vehicles(db:Session=Depends(database.get_db),
 
 
     if current_user_type != enums.UserType.DRIVER:
-        raise errors.InvalidUserTypeException
+        raise errors.NotAuthorizedException
 
     vehicles = (db.query(models.Vehicle, models.VehicleImage.image_path.label('image_path'))
                 .filter(models.Vehicle.user_id==current_user.user_id)
@@ -92,11 +92,43 @@ def get_vehicles(db:Session=Depends(database.get_db),
     
     return vehicles
 
-@route.get('/{vehicle_id}',response_model=vehicle_schema.VehicleDetails)
+@route.put('/')
+def edit_vehicle_details(vehicle_id:int,
+                        type:str|None=Form(None),
+                         model:str|None=Form(None),
+                         seat_capacity:int|None=Form(None),
+                         current_user:models.User=Depends(oauth2.get_current_user),
+                         current_user_type:enums.UserType=Depends(oauth2.get_current_user_type),
+                         db:Session=Depends(database.get_db)):
+
+    if current_user_type!=enums.UserType.DRIVER:
+        raise errors.NotAuthorizedException
+
+    vehicle = db.query(models.Vehicle).filter(models.Vehicle.vehicle_id==vehicle_id,models.Vehicle.user_id==current_user.user_id).first()
+
+    if not vehicle:
+        raise errors.NoVehicleException
+    
+    if model:
+        vehicle.model=model
+    if type:
+        vehicle.type=type
+    if seat_capacity:
+        vehicle.seat_capacity=seat_capacity
+
+    db.commit()
+
+    return True
+
+@route.get('/', response_model=vehicle_schema.VehicleDetails)
 def get_vehicle_details(vehicle_id:int,
                         db:Session=Depends(database.get_db),
-                        current_user:models.User=Depends(oauth2.get_current_user)):
+                        current_user:models.User=Depends(oauth2.get_current_user),
+                        current_user_type:enums.UserType=Depends(oauth2.get_current_user_type)):
     
+    if current_user_type != enums.UserType.DRIVER:
+        raise errors.NotAuthorizedException
+
     vehicle_images = (db.query(models.VehicleImage.vehicle_id,
                                  func.array_agg((models.VehicleImage.image_path)
                                 ).label('images')
@@ -106,12 +138,32 @@ def get_vehicle_details(vehicle_id:int,
 
     vehicle = (db.query(models.Vehicle,vehicle_images.c.images)
                 .join(vehicle_images,models.Vehicle.vehicle_id==vehicle_images.c.vehicle_id)
-                .filter(models.Vehicle.vehicle_id==vehicle_id)
+                .filter(models.Vehicle.vehicle_id==vehicle_id,models.Vehicle.user_id==current_user.user_id)
                 .first())
-   
-    return vehicle
+    
 
-@route.get('/vehicle_images/{vehicle_id}',response_model=List[vehicle_schema.VehicleImages])
+
+    if vehicle:
+        vehicle_obj, images = vehicle
+        rc_paths = [vehicle_obj.rc_book_front,vehicle_obj.rc_book_back]
+
+        rc_paths = file_handle.generate_presigned_url(rc_paths)
+
+        vehicle_data = {
+            "vehicle_id": vehicle_obj.vehicle_id,
+            "type": vehicle_obj.type,
+            "model": vehicle_obj.model,
+            "seat_capacity": vehicle_obj.seat_capacity,
+            "registration_number": vehicle_obj.registration_number,
+            "rc_book_front":rc_paths[0],
+            "rc_book_back":rc_paths[1],
+            "images": images  
+        }
+    else:
+        raise errors.NoVehicleException
+    return vehicle_data
+
+@route.get('/vehicle_images/{vehicle_id}',response_model=vehicle_schema.VehicleImages)
 def get_vehicle_images(vehicle_id:int,
                        db:Session = Depends(database.get_db),
                        current_user:models.User = Depends(oauth2.get_current_user)):
@@ -119,10 +171,12 @@ def get_vehicle_images(vehicle_id:int,
     images = (db.query(models.VehicleImage.image_path.label('image'))
                        .filter(models.VehicleImage.vehicle_id==vehicle_id).all())
 
+
     if len(images)==0:
         raise errors.NoVehicleException
     
-    return images
+    return {"images":[image.image for image in images]}
+
 
 @route.delete('/{vehicle_id}')
 def delete_vehicle(vehicle_id:int,
@@ -142,7 +196,8 @@ def delete_vehicle(vehicle_id:int,
     if vehicle.first().user_id != current_user.user_id:
         raise errors.NotAuthorizedException
     
-    vehicle_path = f'{settings.user_media_url}{current_user.user_id}{constants.VEHICLES_DIR}{vehicle.first().registration_number}'
+    
+    vehicle_path = f'{settings.user_media_url}{current_user.user_id}{constants.VEHICLE_PHOTOS_DIR}{vehicle.first().registration_number}'
 
     file_handle.delete_file(vehicle_path)
 

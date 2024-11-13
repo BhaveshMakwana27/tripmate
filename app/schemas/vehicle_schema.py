@@ -10,6 +10,9 @@ class VehicleBase(BaseModel):
     seat_capacity :int
     registration_number :str
 
+    class Config:
+        orm_mode=True
+
 class UploadVehicle(BaseModel):
     type :str
     model :str
@@ -26,7 +29,12 @@ class VehicleImages(BaseModel):
     images:List[str]
 
 class VehicleDetails(VehicleBase):
-    images:VehicleImages
+    rc_book_front :str
+    rc_book_back :str
+    images:List[str]
     
 class VehicleType(BaseModel):
     type:str
+
+    class Config:
+        orm_mode=True

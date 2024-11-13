@@ -12,8 +12,14 @@ class BookingStatus(Enum):
     COMPLETED = "COMPLETED"
 
 class PaymentStatus(Enum):
+    PENDING = "PENDING"
     SUCCESS = "SUCCESS"
     FAILED = "FAILED"
+    RETURNED = "RETURNED"
+
+class PaymentMethod(Enum):
+    ONLINE = "ONLINE"
+    CASH = "CASH"
 
 class TripStatus(Enum):
     UPCOMING = "UPCOMING"
