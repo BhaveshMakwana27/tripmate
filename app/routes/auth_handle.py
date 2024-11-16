@@ -22,7 +22,7 @@ def login(contact_no: str = Form(...),
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,detail='Invalid Credentials')
     
     access_token = oauth2.create_token({'user_id':get_user.first().user_id,'user_type':user_type.value})
-    response = token_schema.Token(access_token=access_token,token_type='Bearar')
+    response = token_schema.Token(access_token=access_token,token_type='Bearer')
     if user_type == enums.UserType.DRIVER:
         check_docs = db.query(models.UserIdProof).filter(models.UserIdProof.user_id == get_user.first().user_id)
         if check_docs.first() is None:
@@ -49,6 +49,16 @@ def switch_user_type(current_user:models.User = Depends(oauth2.get_current_user)
 
 
     return response
+
+@route.post('/reset_password')
+def reset_password(new_password:str=Form(...),
+                   current_user:models.User=Depends(oauth2.get_current_user),
+                   current_user_type:enums.UserType=Depends(oauth2.get_current_user_type),
+                   db:Session=Depends(database.get_db)):
+    hashed_password = utils.hash_password(new_password)
+    current_user.password=hashed_password
+    db.commit()
+    return True
 
 @route.get("/logout",response_model=token_schema.Token)
 def logout(current_user:models.User=Depends(oauth2.get_current_user)):

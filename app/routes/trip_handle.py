@@ -156,7 +156,6 @@ def search_trip(source_city:str = Form("*"),
                 db:Session = Depends(database.get_db),
                 current_user:models.User = Depends(oauth2.get_current_user),
                 current_user_type:models.User = Depends(oauth2.get_current_user_type)):
-    
 
     if current_user_type == enums.UserType.DRIVER:
         trips = db.query(models.Trip).filter(models.Trip.source_city.contains(source_city),

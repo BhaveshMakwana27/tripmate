@@ -177,7 +177,6 @@ def get_vehicle_images(vehicle_id:int,
     
     return {"images":[image.image for image in images]}
 
-
 @route.delete('/{vehicle_id}')
 def delete_vehicle(vehicle_id:int,
                    db:Session = Depends(database.get_db),

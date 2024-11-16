@@ -68,7 +68,7 @@ def register(name: str = Form(...),
 
 
     access_token = oauth2.create_token({'user_id':new_user.user_id,'user_type':user_type.value})
-    token = token_schema.Token(access_token=access_token,token_type='Bearar')
+    token = token_schema.Token(access_token=access_token,token_type='Bearer')
 
     if user_type == enums.UserType.DRIVER:
         token.need_docs = True
