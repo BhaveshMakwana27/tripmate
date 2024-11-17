@@ -46,7 +46,7 @@ def post_trip(vehicle_id:int = Form(...),
     if (vehicleCheck is None):
         raise errors.NoVehicleException
 
-    if (seats_available > vehicleCheck.seat_capacity-1 or seats_available<1):
+    if (seats_available > vehicleCheck.seat_capacity or seats_available<1):
         raise errors.InvalidSeatCapacityException
     
     if start_time <= datetime.now() or end_time <= start_time:
