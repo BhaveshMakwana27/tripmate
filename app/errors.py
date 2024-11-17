@@ -43,3 +43,7 @@ InvalidCancellationException = HTTPException(status_code=status.HTTP_406_NOT_ACC
 ''' Payment related Exceptions '''
 
 InvalidPaymentMethod = HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Invalid Payment Method.')
+
+
+''' Action Related Exception '''
+InvalidActionException =  HTTPException(status_code=status.HTTP_406_NOT_ACCEPTABLE, detail='Can not perform action now.')

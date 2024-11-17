@@ -7,7 +7,7 @@ from typing import List,Union
 from datetime import datetime,date
 from sqlalchemy import cast,Date
 from sqlalchemy import or_
-from datetime import datetime
+from datetime import datetime,timezone
 
 
 route = APIRouter(prefix='/trip')
@@ -313,10 +313,44 @@ def start_trip(trip_id:int,
     if not trip:
         raise errors.NoTripException
     
-    if trip.start_time >= datetime.now():
-        raise errors.InvalidDateTimeException
+    
     
     trip.status = enums.TripStatus.ONGOING.value
+
+    db.commit()
+    
+    return True
+
+@route.put('/cancel_trip')
+def cancel_trip(trip_id:int,
+                  current_user:models.User=Depends(oauth2.get_current_user),
+                  current_user_type:enums.UserType=Depends(oauth2.get_current_user_type),
+                  db:Session=Depends(database.get_db)):
+    
+    if current_user_type != enums.UserType.DRIVER:
+        raise errors.NotAuthorizedException
+    
+    trip = db.query(models.Trip).filter(models.Trip.trip_id==trip_id,
+                                        models.Trip.user_id==current_user.user_id,
+                                        models.Trip.status==enums.TripStatus.UPCOMING).first()
+    
+    if datetime.now(timezone.utc) >= trip.start_time:
+        raise errors.InvalidActionException
+
+    booking = db.query(models.TripBook).filter(models.TripBook.trip_id==trip.trip_id,
+                                               models.TripBook.booking_status==enums.BookingStatus.CONFIRMED).all()
+
+    if not trip:
+        raise errors.NoTripException
+    
+    if len(booking) > 0:
+        for i in booking:
+            payment = db.query(models.Payment).filter(models.Payment.booking_id==i.booking_id,models.Payment.payment_status==enums.PaymentStatus.PENDING).first()
+            if payment:
+                i.booking_status = enums.BookingStatus.CANCELLED.value
+                payment.payment_status = enums.PaymentStatus.RETURNED.value
+
+    trip.status = enums.TripStatus.CANCELLED.value
 
     db.commit()
     
@@ -336,11 +370,16 @@ def complete_trip(trip_id:int,
                                         or_(models.Trip.status==enums.TripStatus.UPCOMING,
                                         models.Trip.status==enums.TripStatus.ONGOING)).first()
     
+    if not trip:
+        raise errors.NoTripException
+    
+    if trip.start_time<datetime.now(timezone.utc):
+        raise errors.InvalidActionException
+    
     booking = db.query(models.TripBook).filter(models.TripBook.trip_id==trip.trip_id,
                                                models.TripBook.booking_status==enums.BookingStatus.CONFIRMED).all()
 
-    if not trip:
-        raise errors.NoTripException
+    
     
     if len(booking) > 0:
         for i in booking:
@@ -348,8 +387,7 @@ def complete_trip(trip_id:int,
             if payment:
                 payment.payment_status = enums.PaymentStatus.SUCCESS.value
 
-    if datetime.now() <= trip.start_time:
-        raise errors.InvalidDateTimeException
+    
     
     trip.status = enums.TripStatus.COMPLETED.value
 

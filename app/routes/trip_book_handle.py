@@ -82,14 +82,16 @@ def get_booking_list(db:Session = Depends(database.get_db),
                  current_user:models.User = Depends(oauth2.get_current_user),
                  current_user_type:enums.UserType = Depends(oauth2.get_current_user_type)):
     
-    if current_user_type == enums.UserType.PASSENGER:
-        bookings = (db.query(models.TripBook).join(models.Trip)
-                        .filter(models.TripBook.passenger_id==current_user.user_id,
-                                or_(models.Trip.status==enums.TripStatus.UPCOMING,
-                                models.Trip.status==enums.TripStatus.ONGOING)
-                                ,models.TripBook.booking_status==enums.BookingStatus.CONFIRMED)
-                        .order_by(models.TripBook.booking_time)
-                    .all())
+
+    if current_user_type != enums.UserType.PASSENGER:
+        raise errors.InvalidUserTypeException
+    bookings = (db.query(models.TripBook).join(models.Trip)
+                    .filter(models.TripBook.passenger_id==current_user.user_id,
+                            or_(models.Trip.status==enums.TripStatus.UPCOMING,
+                            models.Trip.status==enums.TripStatus.ONGOING)
+                            ,models.TripBook.booking_status==enums.BookingStatus.CONFIRMED)
+                    .order_by(models.TripBook.booking_time)
+                .all())
     
     if len(bookings)<1:
         raise errors.NoCurrentBookings
@@ -178,7 +180,8 @@ def get_booking_details(booking_id:int,
                                         destination_pincode=trip.destination_pincode,
                                         start_time =trip.start_time,
                                         end_time =trip.end_time,
-                                        fees_per_person = trip.fees_per_person)
+                                        fees_per_person = trip.fees_per_person,
+                                        status=trip.status)
     
     booking = trip_book_schema.TripBookBase(trip_id=booking.trip_id,
                                                  driver_id=booking.driver_id,
@@ -205,8 +208,9 @@ def get_booking_history(current_user:models.User=Depends(oauth2.get_current_user
         raise errors.NotAuthorizedException
     
     booking = (db.query(models.TripBook).join(models.Trip).filter(models.TripBook.passenger_id==current_user.user_id,
-                                                                  or_(models.Trip.status==enums.TripStatus.COMPLETED
-                                                                      ,models.Trip.status==enums.TripStatus.CANCELLED),
+                                                                  or_(models.Trip.status==enums.TripStatus.COMPLETED,
+                                                                      models.Trip.status==enums.TripStatus.CANCELLED,
+                                                                      models.TripBook.booking_status==enums.BookingStatus.CANCELLED),
                                                or_(models.TripBook.booking_status==enums.BookingStatus.CANCELLED,
                                                    models.TripBook.booking_status==enums.BookingStatus.CONFIRMED))
                                                    .order_by(models.TripBook.booking_time)
