@@ -39,6 +39,7 @@ class TripDetailBase(BaseModel):
     start_time : datetime
     end_time : datetime
     fees_per_person : int
+    status : str
 
 class CreateTrip(BaseModel):
     vehicle_id:int

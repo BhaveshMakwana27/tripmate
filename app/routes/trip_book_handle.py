@@ -205,6 +205,8 @@ def get_booking_history(current_user:models.User=Depends(oauth2.get_current_user
         raise errors.NotAuthorizedException
     
     booking = (db.query(models.TripBook).join(models.Trip).filter(models.TripBook.passenger_id==current_user.user_id,
+                                                                  or_(models.Trip.status==enums.TripStatus.COMPLETED
+                                                                      ,models.Trip.status==enums.TripStatus.CANCELLED),
                                                or_(models.TripBook.booking_status==enums.BookingStatus.CANCELLED,
                                                    models.TripBook.booking_status==enums.BookingStatus.CONFIRMED))
                                                    .order_by(models.TripBook.booking_time)
