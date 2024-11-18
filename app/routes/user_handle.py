@@ -72,7 +72,7 @@ def register(name: str = Form(...),
                                token_type='Bearer'
                                )
 
-    if user_type == enums.UserType.DRIVER:
+    if user_type == enums.UserType.DRIVER.value:
         token.need_docs = True
 
     return token
