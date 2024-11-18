@@ -294,7 +294,11 @@ def get_trip_history(current_user:models.User=Depends(oauth2.get_current_user),
                                                     models.Trip.status==enums.TripStatus.CANCELLED))
                                                     .all())
 
-        trip_list = [trip_schema.PassengerTripHistoryList.model_validate(trip) for trip in trips]
+        trip_list = []
+        for trip in trips:
+            t = trip_schema.PassengerTripHistoryList.model_validate(trip)
+            trip_list.append(t)
+
 
     if len(trip_list) < 1:
         return errors.NoTripException
