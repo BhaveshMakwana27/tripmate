@@ -1,8 +1,9 @@
-from pydantic import BaseModel,EmailStr
+from pydantic import BaseModel,EmailStr,ConfigDict
 from datetime import datetime
 from app.enums import Gender
 from .token_schema import Token
-from typing import List
+from . import base_schema,user_schema
+from typing import List,Union
 
 class UserBase(BaseModel):
     name:str
@@ -14,6 +15,8 @@ class UserBase(BaseModel):
     country:str
     pincode:int
     gender:Gender
+    
+    model_config = ConfigDict(from_attributes=True)
 
 class EditProfile(BaseModel):
     name:str
@@ -31,28 +34,33 @@ class GetUser(BaseModel):
     contact_no:str
     profile_photo:str
 
-    class Config:
-        orm_mode=True
+    model_config = ConfigDict(from_attributes=True)
 
 class CreateUser(UserBase):
     password:str
-
 
 class DriverBase(BaseModel):
     user_id:int
     name:str
 
-class GetUserDetails(UserBase):
+    model_config = ConfigDict(from_attributes=True)
+
+class GetPassengerUserDetails(UserBase):
     profile_photo:str
     created_at:datetime
+
+    class Config:
+        orm_mode = True
 
 class GetDriverUserDetails(UserBase):
     ratings:float
     rating_count:int
     profile_photo:str
     created_at:datetime
-    documents:List[str]
+    documents:List[str] = []
 
+    model_config = ConfigDict(from_attributes=True)
+        
 class UploadUserDocs(BaseModel):
     user_id:int
     aadhar_number:str
@@ -67,6 +75,7 @@ class PassengerDetailBase(BaseModel):
     seat_count : int
     payable_amount : int
 
+
 class DriverDetailBase(BaseModel):
     user_id:int
     name:str
@@ -78,3 +87,6 @@ class DriverDetailBase(BaseModel):
 
     class Config:
         orm_mode=True
+
+class GetProfileDetailsResponse(base_schema.BaseSchema):
+    data : Union[user_schema.GetPassengerUserDetails,user_schema.GetDriverUserDetails]

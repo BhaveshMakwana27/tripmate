@@ -1,7 +1,7 @@
 from fastapi import APIRouter,Depends,status,HTTPException,Form
 from fastapi.responses import RedirectResponse,JSONResponse
 from app import database,models,utils,oauth2,enums,errors
-from app.schemas import token_schema
+from app.schemas import token_schema,base_schema
 from app.config import settings
 from sqlalchemy.orm import Session
 
@@ -16,10 +16,10 @@ def login(contact_no: str = Form(...),
                     ):
     get_user = db.query(models.User).filter(models.User.contact_no==contact_no)
     if get_user.first() is None:    
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,detail='Invalid Credentials')
+        return errors.CredentialsException
     
     if not utils.verify_password(password,get_user.first().password):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,detail='Invalid Credentials')
+        return errors.CredentialsException
     
     access_token = oauth2.create_token({'user_id':get_user.first().user_id,'user_type':user_type.value})
     response = token_schema.Token(access_token=access_token,token_type='Bearer')
@@ -50,7 +50,7 @@ def switch_user_type(current_user:models.User = Depends(oauth2.get_current_user)
 
     return response
 
-@route.post('/reset_password')
+@route.post('/reset_password',response_model=base_schema.BaseSchema)
 def reset_password(new_password:str=Form(...),
                    current_user:models.User=Depends(oauth2.get_current_user),
                    current_user_type:enums.UserType=Depends(oauth2.get_current_user_type),
@@ -58,8 +58,11 @@ def reset_password(new_password:str=Form(...),
     hashed_password = utils.hash_password(new_password)
     current_user.password=hashed_password
     db.commit()
-    return True
 
-@route.get("/logout",response_model=token_schema.Token)
+    context = base_schema.BaseSchema
+    return context
+
+@route.get("/logout",response_model=base_schema.BaseSchema)
 def logout(current_user:models.User=Depends(oauth2.get_current_user)):
-    raise HTTPException(status_code=status.HTTP_302_FOUND)
+    context = base_schema.BaseSchema
+    return context

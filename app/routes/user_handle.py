@@ -2,7 +2,7 @@ from fastapi import APIRouter,Depends,UploadFile,File,Form
 from fastapi.responses import RedirectResponse
 from datetime import datetime
 from app import database,models,utils,oauth2,file_handle,constants,errors,enums
-from app.schemas import user_schema,token_schema
+from app.schemas import user_schema,token_schema,base_schema
 from app.config import settings
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
@@ -23,20 +23,20 @@ def register(name: str = Form(...),
                     gender:str = Form(...),
                     password: str = Form(...),
                     profile_photo: UploadFile|None = File(None),
-                    user_type:enums.UserType = Form(enums.UserType.PASSENGER),
+                    user_type:str = Form(enums.UserType.PASSENGER.value),
                     db:Session = Depends(database.get_db)
                     ):
     
     user_check = db.query(models.User).filter(or_(models.User.email==email,models.User.contact_no==contact_no))
     if user_check.first():
         if user_check.first().email==email:
-            raise errors.UserEmailExistException
+            return errors.UserEmailExistException
         if user_check.first().contact_no==contact_no:
-            raise errors.UserContactExistException
+            return errors.UserContactExistException
 
 
-    if user_type != enums.UserType.DRIVER and user_type != enums.UserType.PASSENGER:
-        raise errors.InvalidUserTypeException  
+    if user_type != enums.UserType.DRIVER.value and user_type != enums.UserType.PASSENGER.value:
+        return errors.InvalidUserTypeException
       
 
     hashed_password = utils.hash_password(password) 
@@ -67,31 +67,36 @@ def register(name: str = Form(...),
     db.refresh(new_user)
 
 
-    access_token = oauth2.create_token({'user_id':new_user.user_id,'user_type':user_type.value})
-    token = token_schema.Token(access_token=access_token,token_type='Bearer')
+    access_token = oauth2.create_token({'user_id':new_user.user_id,'user_type':user_type})
+    token = token_schema.Token(access_token=access_token,
+                               token_type='Bearer'
+                               )
 
     if user_type == enums.UserType.DRIVER:
         token.need_docs = True
 
     return token
 
-@route.get("/",response_model=Union[user_schema.GetUserDetails,user_schema.GetDriverUserDetails])
+@route.get("/",response_model=user_schema.GetProfileDetailsResponse)
 def get_profile_details(db:Session = Depends(database.get_db),
                         current_user:models.User = Depends(oauth2.get_current_user),
                         current_user_type:enums.UserType=Depends(oauth2.get_current_user_type)):
 
+    profile = user_schema.GetDriverUserDetails.model_validate(current_user)
 
     if current_user_type == enums.UserType.DRIVER:
         get_docs = db.query(models.UserIdProof).filter(models.UserIdProof.user_id==current_user.user_id).first()
         if get_docs is None:
-            raise errors.DocumentNotUploadedException
+            return errors.DocumentNotUploadedException
         doc_path = [get_docs.aadhar_card_front,get_docs.aadhar_card_back,get_docs.license_front,get_docs.license_back]
         doc_urls = file_handle.generate_presigned_url(doc_path)
         
-        return current_user,{'documents':doc_urls}
-    return current_user
+        profile.documents = doc_urls
 
-@route.put("/",response_model=user_schema.GetUserDetails)
+        return {'data' : profile}
+    return {'data':profile}
+
+@route.put("/",response_model=base_schema.BaseSchema)
 def edit_profile(profile_photo:UploadFile=File(None),
                             name: str = Form(...),
                             address_line:str = Form(...),
@@ -111,7 +116,7 @@ def edit_profile(profile_photo:UploadFile=File(None),
                                         state=state,
                                         country=country,
                                         pincode=pincode,
-                                        gender=gender)
+                                        gender=gender.upper())
     
 
     if profile_photo is not None:
@@ -127,15 +132,17 @@ def edit_profile(profile_photo:UploadFile=File(None),
     user.update(dict(edit_user))
     db.commit()
    
-    return user.first()
+    context = base_schema.BaseSchema
 
-@route.put('/update_profile_photo')
+    return context
+
+@route.put('/update_profile_photo',response_model=base_schema.BaseSchema)
 def edit_profile_photo( profile_photo:UploadFile=File(None),
                         db:Session=Depends(database.get_db),
                         current_user:models.User=Depends(oauth2.get_current_user)):
     
     if not profile_photo:
-        raise errors.FileSelectException
+        return errors.FileSelectException
     new_user_dir_path=f'{settings.user_media_url}{current_user.user_id}/'
     profile_photo.filename = f'{current_user.user_id}_profile.jpg'
     profile_file_path = f'{new_user_dir_path}{profile_photo.filename}'
@@ -146,9 +153,11 @@ def edit_profile_photo( profile_photo:UploadFile=File(None),
     current_user.profile_photo=new_url
     current_user.updated_at = datetime.now()
     db.commit()
-    return True
 
-@route.post('/rating')
+    context = base_schema.BaseSchema
+    return context
+
+@route.post('/rating',response_model=base_schema.BaseSchema)
 def give_rating(trip_id:int,current_user:models.User=Depends(oauth2.get_current_user),
                 rating:int = Form(0),
                 current_user_type:enums.UserType=Depends(oauth2.get_current_user_type),
@@ -156,13 +165,13 @@ def give_rating(trip_id:int,current_user:models.User=Depends(oauth2.get_current_
     
     
     if current_user_type!=enums.UserType.PASSENGER:
-        raise errors.NotAuthorizedException
+        return errors.NotAuthorizedException
     
     trip = db.query(models.Trip).filter(models.Trip.trip_id==trip_id,
                                         models.Trip.status==enums.TripStatus.COMPLETED).first()
 
     if trip is None:
-        raise errors.NoTripException
+        return errors.NoTripException
 
     driver = db.query(models.User).filter(models.User.user_id==trip.user_id).first()
 
@@ -170,11 +179,12 @@ def give_rating(trip_id:int,current_user:models.User=Depends(oauth2.get_current_
     driver.ratings = (driver.ratings+rating)/driver.rating_count
 
     db.commit()
-    db.refresh(driver)
+    
+    context = base_schema.BaseSchema
 
-    return True
+    return context
 
-@route.post("/upload_docs")
+@route.post("/upload_docs",response_model=base_schema.BaseSchema)
 def upload_user_docs(aadhar_number:str = Form(),
                         aadhar_card_front:UploadFile = File(...),
                         aadhar_card_back :UploadFile = File(...), 
@@ -186,14 +196,14 @@ def upload_user_docs(aadhar_number:str = Form(),
                     ):
 
     if current_user_type != enums.UserType.DRIVER:
-        raise errors.NotAuthorizedException
+        return errors.NotAuthorizedException
     
     if not (len(aadhar_number)==16 and aadhar_number.isdigit()):
-        raise errors.InvalidAadharNumberException
+        return errors.InvalidAadharNumberException
     
     check_for_doc = db.query(models.UserIdProof).filter(or_(models.UserIdProof.user_id==current_user.user_id,models.UserIdProof.aadhar_number==aadhar_number))
     if check_for_doc.first():
-        raise errors.DocumentAlreadyUploadedException
+        return errors.DocumentAlreadyUploadedException
     
 
     aadhar_card_front.filename = 'aadhar_front.jpg'
@@ -212,7 +222,7 @@ def upload_user_docs(aadhar_number:str = Form(),
     file_urls = file_handle.upload_files(files_paths)
     
     if len(file_urls) < 1:
-        raise errors.FileUploadException
+        return errors.FileUploadException
 
     new_docs = user_schema.UploadUserDocs(user_id=current_user.user_id,
                                     aadhar_number=aadhar_number,
@@ -227,4 +237,6 @@ def upload_user_docs(aadhar_number:str = Form(),
     db.add(new_docs)
     db.commit()
 
-    return True
+    context = base_schema.BaseSchema
+
+    return context

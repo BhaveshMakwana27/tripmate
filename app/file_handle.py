@@ -22,7 +22,7 @@ def upload_file(file:UploadFile,filepath,client=client()):
         file_url = f"https://{settings.aws_s3_bucket}.s3.amazonaws.com/{filepath}"
         return file_url
     except:
-        raise errors.FileUploadException
+        return errors.FileUploadException
     
 
 def upload_files(files_paths:List[List[UploadFile|str]],client=client()):
@@ -37,7 +37,7 @@ def upload_files(files_paths:List[List[UploadFile|str]],client=client()):
             file_urls.append(f"https://{settings.aws_s3_bucket}.s3.amazonaws.com/{file[1]}")
         return file_urls
     except:
-        raise errors.FileUploadException
+        return errors.FileUploadException
 
 def generate_presigned_url(files_paths:List[str],client=client(),expiration=3600):
     try:
@@ -53,7 +53,7 @@ def generate_presigned_url(files_paths:List[str],client=client(),expiration=3600
             file_urls.append(url)
         return file_urls
     except:
-        raise errors.DocumentNotUploadedException
+        return errors.DocumentNotUploadedException
 
 
 

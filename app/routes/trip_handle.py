@@ -1,7 +1,7 @@
 from fastapi import APIRouter,Depends,Form
 from app import database,oauth2,errors,models,enums
 from sqlalchemy import func
-from app.schemas import trip_schema,trip_book_schema,user_schema,vehicle_schema
+from app.schemas import trip_schema,trip_book_schema,user_schema,vehicle_schema,base_schema
 from sqlalchemy.orm import Session,joinedload
 from typing import List,Union
 from datetime import datetime,date
@@ -13,7 +13,7 @@ from datetime import datetime,timezone
 route = APIRouter(prefix='/trip')
 
 
-@route.post('')
+@route.post('',response_model=base_schema.BaseSchema)
 def post_trip(vehicle_id:int = Form(...),
             source_address_line:str = Form(...),
             source_city:str = Form(...),
@@ -35,22 +35,22 @@ def post_trip(vehicle_id:int = Form(...),
            ):
 
     if current_user_type is not enums.UserType.DRIVER:
-        raise errors.NotAuthorizedException
+        return errors.NotAuthorizedException
 
     userCheck = db.query(models.UserIdProof).filter(models.UserIdProof.user_id==current_user.user_id).first()
     if not userCheck:
-        raise errors.DriverNotEligibleException
+        return errors.DriverNotEligibleException
     
     vehicleCheck = db.query(models.Vehicle).filter(models.Vehicle.user_id==current_user.user_id,
                                                       models.Vehicle.vehicle_id==vehicle_id).first()
     if (vehicleCheck is None):
-        raise errors.NoVehicleException
+        return errors.NoVehicleException
 
     if (seats_available > vehicleCheck.seat_capacity or seats_available<1):
-        raise errors.InvalidSeatCapacityException
+        return errors.InvalidSeatCapacityException
     
     if start_time <= datetime.now() or end_time <= start_time:
-        raise errors.InvalidDateTimeException
+        return errors.InvalidDateTimeException
     
 
     trip = trip_schema.CreateTrip(vehicle_id=vehicle_id,
@@ -73,23 +73,11 @@ def post_trip(vehicle_id:int = Form(...),
     db.add(new_trip)
     db.commit()
     
-    return True
+    context = base_schema.BaseSchema
 
-@route.get('/request_edit',response_model=trip_schema.TripBase)
-def request_trip_edit(trip_id:int,db:Session=Depends(database.get_db),
-                      current_user:models.User = Depends(oauth2.get_current_user),
-                      current_user_type:enums.UserType = Depends(oauth2.get_current_user_type)):
+    return context
 
-    if current_user_type != enums.UserType.DRIVER:
-        raise errors.NotAuthorizedException
-
-    trip = db.query(models.Trip).filter(models.Trip.trip_id==trip_id,models.Trip.user_id==current_user.user_id)
-    if not trip.first():
-        raise errors.NoTripException
-
-    return trip.first()
-
-@route.put('/')
+@route.put('/',response_model=base_schema.BaseSchema)
 def edit_trip(trip_id:int,
             vehicle_id:int = Form(...),
             source_address_line:str = Form(...),
@@ -112,21 +100,21 @@ def edit_trip(trip_id:int,
     
     trip = db.query(models.Trip).filter(models.Trip.trip_id==trip_id)
     if not trip.first():
-        raise errors.NoTripException
+        return errors.NoTripException
     
     if trip.first().user_id is not current_user.user_id:
-        raise errors.NotAuthorizedException
+        return errors.NotAuthorizedException
     
     vehicleCheck = db.query(models.Vehicle).filter(models.Vehicle.user_id==current_user.user_id,
                                                       models.Vehicle.vehicle_id==vehicle_id).first()
     if (vehicleCheck is None):
-        raise errors.NoVehicleException
+        return errors.NoVehicleException
 
     if (seats_available > vehicleCheck.seat_capacity-1 or seats_available<1):
-        raise errors.InvalidSeatCapacityException
+        return errors.InvalidSeatCapacityException
     
     if start_time < datetime.now() or end_time < start_time:
-        raise errors.InvalidDateTimeException
+        return errors.InvalidDateTimeException
     
     edit_trip = trip_schema.EditTrip(vehicle_id=vehicle_id,
                                     source_address_line=source_address_line.strip().capitalize(),
@@ -147,9 +135,11 @@ def edit_trip(trip_id:int,
     
     trip.update(dict(edit_trip))
     db.commit()
-    return True
 
-@route.get('/search',response_model=List[trip_schema.TripList])
+    context = base_schema.BaseSchema
+    return context
+
+@route.get('/search',response_model=trip_schema.TripListResponse)
 def search_trip(source_city:str = Form("*"),
                 destination_city:str = Form("*"),
                 start_date:date = Form(None),
@@ -173,11 +163,19 @@ def search_trip(source_city:str = Form("*"),
         trips = trips.all()
 
     if len(trips) < 1:
-        raise errors.NoTripException
+        return errors.NoTripException
     
-    return trips
+    trip_list = []
+    for trip in trips:
+        t = trip_schema.TripList.model_validate(trip)
+        t.driver_name=trip.driver.name
+        t.vehicle_type=trip.vehicle.type
+        trip_list.append(t)
 
-@route.get('',response_model=List[trip_schema.TripList])
+    context = {'data':trip_list}
+    return context
+
+@route.get('',response_model=trip_schema.TripListResponse)
 def get_trips(db:Session = Depends(database.get_db),
               current_user:models.User = Depends(oauth2.get_current_user),
               current_user_type:enums.UserType = Depends(oauth2.get_current_user_type)
@@ -186,14 +184,22 @@ def get_trips(db:Session = Depends(database.get_db),
     if current_user_type == enums.UserType.DRIVER:
         trips = db.query(models.Trip).filter(models.Trip.user_id==current_user.user_id).order_by('start_time').all()
     else:
-        raise errors.NotAuthorizedException
+        return errors.NotAuthorizedException
 
     if len(trips)==0:
-        raise errors.NoTripException
+        return errors.NoTripException
+    
+    trip_list = []
+    for trip in trips:
+        t = trip_schema.TripList.model_validate(trip)
+        t.driver_name=trip.driver.name
+        t.vehicle_type=trip.vehicle.type
+        trip_list.append(t)
 
-    return trips
+    context = {'data':trip_list}
+    return context
 
-@route.get('/',response_model=Union[trip_schema.TripDetailDriver,trip_schema.TripDetailPassenger])
+@route.get('/',response_model=trip_schema.TripDetailResponse)
 def get_trip_detail(trip_id:int,
                     db:Session=Depends(database.get_db),
                     current_user:models.User = Depends(oauth2.get_current_user),
@@ -207,7 +213,7 @@ def get_trip_detail(trip_id:int,
                 .first())
         
         if trip is None:
-            raise errors.NoTripException
+            return errors.NoTripException
         get_bookings = db.query(models.TripBook).filter(models.TripBook.trip_id==trip_id,models.TripBook.driver_id==current_user.user_id).all()
         passengers = []
 
@@ -215,7 +221,8 @@ def get_trip_detail(trip_id:int,
             passengers.append(user_schema.PassengerDetailBase(booking_id=i.booking_id,
                                                              name=i.passenger.name,
                                                              seat_count = i.seat_count,
-                                                             payable_amount = i.payable_amount))
+                                                             payable_amount = i.payable_amount,
+                                                             ))
 
         passenger_count = len(passengers)
 
@@ -227,7 +234,7 @@ def get_trip_detail(trip_id:int,
                 .first())
         
         if trip is None:
-            raise errors.NoTripException
+            return errors.NoTripException
         
         driver = user_schema.DriverDetailBase(user_id=trip.driver.user_id,
                                         name=trip.driver.name,
@@ -238,41 +245,28 @@ def get_trip_detail(trip_id:int,
                                         rating_count=trip.driver.rating_count)
         context.update({"driver":driver})
     else:
-        raise errors.InvalidUserTypeException
+        return errors.InvalidUserTypeException
     
-    trip_detail = trip_schema.TripBase(vehicle_id=trip.vehicle_id,
-                                source_address_line=trip.source_address_line,
-                                source_city=trip.source_city,
-                                source_state=trip.source_state,
-                                source_country=trip.source_country,
-                                source_pincode=trip.source_pincode,
-                                destination_address_line=trip.destination_address_line,
-                                destination_city=trip.destination_city,
-                                destination_state=trip.destination_state,
-                                destination_country=trip.destination_country,
-                                destination_pincode=trip.destination_pincode,
-                                seats_available=trip.seats_available,
-                                fees_per_person=trip.fees_per_person,
-                                status=trip.status,
-                                start_time=trip.start_time,
-                                end_time=trip.end_time,
-                                duration=trip.duration)
+    trip_detail = trip_schema.TripBase.model_validate(trip)
 
     vehicle = vehicle_schema.VehicleBase(vehicle_id=trip.vehicle.vehicle_id,
                                             type =trip.vehicle.type,
                                             model =trip.vehicle.model,
                                             seat_capacity =trip.vehicle.seat_capacity,
                                             registration_number =trip.vehicle.registration_number)
-    images =[image[0] for image in db.query(models.VehicleImage.image_path).filter(models.VehicleImage.vehicle_id==trip.vehicle_id).all() ]
+    vehicle_images = [image[0] for image in db.query(models.VehicleImage.image_path).filter(models.VehicleImage.vehicle_id==trip.vehicle_id).all() ]
 
-    context.update({"vehicle":vehicle,"vehicle_images":images,"trip":trip_detail})
+    context.update({"vehicle":vehicle,"vehicle_images":vehicle_images,"trip":trip_detail})
+
+    context = {'data':context}
 
     return context
 
-@route.get('/history',response_model=List[Union[trip_schema.PassengerTripHistory,trip_schema.DriverTripHistory]])
+@route.get('/history',response_model=trip_schema.TripHistoryListResponse)
 def get_trip_history(current_user:models.User=Depends(oauth2.get_current_user),
                         current_user_type:enums.UserType=Depends(oauth2.get_current_user_type),
                         db:Session=Depends(database.get_db)):
+    trip_list = []
 
     if current_user_type == enums.UserType.DRIVER:
         count_passanger = (db.query(models.TripBook.trip_id,
@@ -287,23 +281,36 @@ def get_trip_history(current_user:models.User=Depends(oauth2.get_current_user),
                                     models.Trip.user_id==current_user.user_id)
                         .order_by(models.Trip.end_time)
                         .all())    
-    elif current_user_type == enums.UserType.PASSENGER:
 
+        for trip in trips:
+            t = trip_schema.DriverTripHistoryList.model_validate(trip[0])
+            t.no_of_passangers=trip[1]
+            trip_list.append(t)
+
+
+    elif current_user_type == enums.UserType.PASSENGER:
         trips = (db.query(models.TripBook).filter(models.TripBook.passenger_id==current_user.user_id,
                                                  or_(models.Trip.status==enums.TripStatus.COMPLETED,
                                                     models.Trip.status==enums.TripStatus.CANCELLED))
                                                     .all())
 
-    return trips
+        trip_list = [trip_schema.PassengerTripHistoryList.model_validate(trip) for trip in trips]
 
-@route.put('/start_trip')
+    if len(trip_list) < 1:
+        return errors.NoTripException
+
+
+    context = {'data':trip_list}
+    return context
+
+@route.put('/start_trip',response_model=base_schema.BaseSchema)
 def start_trip(trip_id:int,
                   current_user:models.User=Depends(oauth2.get_current_user),
                   current_user_type:enums.UserType=Depends(oauth2.get_current_user_type),
                   db:Session=Depends(database.get_db)):
     
     if current_user_type != enums.UserType.DRIVER:
-        raise errors.NotAuthorizedException
+        return errors.NotAuthorizedException
     
     trip = db.query(models.Trip).filter(models.Trip.trip_id==trip_id,
                                         models.Trip.user_id==current_user.user_id,
@@ -311,7 +318,7 @@ def start_trip(trip_id:int,
     
 
     if not trip:
-        raise errors.NoTripException
+        return errors.NoTripException
     
     
     
@@ -319,29 +326,31 @@ def start_trip(trip_id:int,
 
     db.commit()
     
-    return True
+    context = base_schema.BaseSchema
 
-@route.put('/cancel_trip')
+    return context
+
+@route.put('/cancel_trip',response_model=base_schema.BaseSchema)
 def cancel_trip(trip_id:int,
                   current_user:models.User=Depends(oauth2.get_current_user),
                   current_user_type:enums.UserType=Depends(oauth2.get_current_user_type),
                   db:Session=Depends(database.get_db)):
     
     if current_user_type != enums.UserType.DRIVER:
-        raise errors.NotAuthorizedException
+        return errors.NotAuthorizedException
     
     trip = db.query(models.Trip).filter(models.Trip.trip_id==trip_id,
                                         models.Trip.user_id==current_user.user_id,
                                         models.Trip.status==enums.TripStatus.UPCOMING).first()
     
     if datetime.now(timezone.utc) >= trip.start_time:
-        raise errors.InvalidActionException
+        return errors.InvalidActionException
 
     booking = db.query(models.TripBook).filter(models.TripBook.trip_id==trip.trip_id,
                                                models.TripBook.booking_status==enums.BookingStatus.CONFIRMED).all()
 
     if not trip:
-        raise errors.NoTripException
+        return errors.NoTripException
     
     if len(booking) > 0:
         for i in booking:
@@ -354,16 +363,18 @@ def cancel_trip(trip_id:int,
 
     db.commit()
     
-    return True
+    context = base_schema.BaseSchema
 
-@route.put('/complete_trip')
+    return context
+
+@route.put('/complete_trip',response_model=base_schema.BaseSchema)
 def complete_trip(trip_id:int,
                   current_user:models.User=Depends(oauth2.get_current_user),
                   current_user_type:enums.UserType=Depends(oauth2.get_current_user_type),
                   db:Session=Depends(database.get_db)):
     
     if current_user_type != enums.UserType.DRIVER:
-        raise errors.NotAuthorizedException
+        return errors.NotAuthorizedException
     
     trip = db.query(models.Trip).filter(models.Trip.trip_id==trip_id,
                                         models.Trip.user_id==current_user.user_id,
@@ -371,10 +382,10 @@ def complete_trip(trip_id:int,
                                         models.Trip.status==enums.TripStatus.ONGOING)).first()
     
     if not trip:
-        raise errors.NoTripException
+        return errors.NoTripException
     
     if trip.start_time<datetime.now(timezone.utc):
-        raise errors.InvalidActionException
+        return errors.InvalidActionException
     
     booking = db.query(models.TripBook).filter(models.TripBook.trip_id==trip.trip_id,
                                                models.TripBook.booking_status==enums.BookingStatus.CONFIRMED).all()
@@ -393,4 +404,6 @@ def complete_trip(trip_id:int,
 
     db.commit()
     
-    return True
+    context = base_schema.BaseSchema
+
+    return context

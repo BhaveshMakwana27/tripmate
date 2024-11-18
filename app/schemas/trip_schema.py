@@ -1,8 +1,7 @@
-from pydantic import BaseModel
+from pydantic import BaseModel,ConfigDict
 from datetime import datetime,timedelta
-from typing import List
-from app.schemas import user_schema,vehicle_schema
-
+from typing import List,Union
+from app.schemas import user_schema,vehicle_schema,base_schema,trip_schema
 
 class TripBase(BaseModel):
     vehicle_id:int
@@ -22,8 +21,9 @@ class TripBase(BaseModel):
     start_time:datetime
     end_time:datetime
     duration:timedelta
-    
 
+    model_config = ConfigDict(from_attributes=True)
+    
 class TripDetailBase(BaseModel):
     trip_id : int
     source_address_line:str
@@ -40,6 +40,8 @@ class TripDetailBase(BaseModel):
     end_time : datetime
     fees_per_person : int
     status : str
+
+    model_config = ConfigDict(from_attributes=True)
 
 class CreateTrip(BaseModel):
     vehicle_id:int
@@ -58,7 +60,6 @@ class CreateTrip(BaseModel):
     start_time:datetime
     end_time:datetime
 
-
 class EditTrip(TripBase):
     pass
 
@@ -69,6 +70,7 @@ class TripDetailPassenger(BaseModel):
     vehicle:vehicle_schema.VehicleBase
     vehicle_images:List[str]
 
+    model_config = ConfigDict(from_attributes=True)
 
 class TripDetailDriver(BaseModel):
     trip:TripBase
@@ -76,6 +78,11 @@ class TripDetailDriver(BaseModel):
     vehicle_images:List[str]
     passenger_count:int
     passenger_list:List[user_schema.PassengerDetailBase]
+
+    model_config = ConfigDict(from_attributes=True)
+
+class TripDetailResponse(base_schema.BaseSchema):
+    data : Union[trip_schema.TripDetailDriver,trip_schema.TripDetailPassenger]
 
 
 class TripList(BaseModel):
@@ -86,8 +93,14 @@ class TripList(BaseModel):
     seats_available:int
     start_time:datetime
     end_time:datetime
-    vehicle:vehicle_schema.VehicleType
-    driver:user_schema.DriverBase
+    vehicle_type:str = None
+    driver_name:str = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+class TripListResponse(base_schema.BaseSchema):
+    data : List[TripList]
+
 
 class TripHistoryList(BaseModel):
     trip_id:int
@@ -97,14 +110,14 @@ class TripHistoryList(BaseModel):
     start_time:datetime
     end_time:datetime
     
-class DriverTripHistory(BaseModel):
-    Trip:TripHistoryList
-    no_of_passangers:int
+class DriverTripHistoryList(TripHistoryList):
+    no_of_passangers:int = 0
 
-class PassengerTripHistory(BaseModel):
-    trip_id:int
-    source_city:str
-    destination_city:str
-    status:str
-    start_time:datetime
-    end_time:datetime
+    model_config = ConfigDict(from_attributes=True)
+
+class PassengerTripHistoryList(TripHistoryList):
+    model_config = ConfigDict(from_attributes=True)
+    pass
+
+class TripHistoryListResponse(base_schema.BaseSchema):
+    data : List[Union[trip_schema.PassengerTripHistoryList,trip_schema.DriverTripHistoryList]]

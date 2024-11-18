@@ -1,7 +1,7 @@
-from pydantic import BaseModel
+from pydantic import BaseModel,ConfigDict
 from typing import List
 from datetime import datetime
-from app.schemas import user_schema
+from app.schemas import user_schema,base_schema
 
 class VehicleBase(BaseModel):
     vehicle_id:int
@@ -9,9 +9,6 @@ class VehicleBase(BaseModel):
     model :str
     seat_capacity :int
     registration_number :str
-
-    class Config:
-        orm_mode=True
 
 class UploadVehicle(BaseModel):
     type :str
@@ -21,9 +18,13 @@ class UploadVehicle(BaseModel):
     rc_book_front :str
     rc_book_back :str
 
-class VehicleList(BaseModel):
-    Vehicle:VehicleBase
-    image_path:str
+class VehicleList(VehicleBase):
+    image_path:str = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+class VehicleListResponse(base_schema.BaseSchema):
+    data : List[VehicleList]
     
 class VehicleImages(BaseModel):
     images:List[str]
@@ -32,9 +33,11 @@ class VehicleDetails(VehicleBase):
     rc_book_front :str
     rc_book_back :str
     images:List[str]
+
+class VehicleDetailResponse(base_schema.BaseSchema):
+    data : VehicleDetails
     
 class VehicleType(BaseModel):
     type:str
 
-    class Config:
-        orm_mode=True
+    model_config = ConfigDict(from_attributes=True)

@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel,ConfigDict
 
 class PaymentDetail(BaseModel):
     payment_id:int
@@ -6,5 +6,4 @@ class PaymentDetail(BaseModel):
     payment_method:str
     payment_status:str
 
-    class Config:
-        orm_mode=True
+    model_config = ConfigDict(from_attributes=True)
